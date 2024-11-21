@@ -3,59 +3,168 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hexagon Tile Game</title>
+    <title>Race Game</title>
     <style>
         body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
             font-family: Arial, sans-serif;
-            background-color: #f0f0f0;
+            text-align: center;
         }
-        #board {
+        .grid {
             display: grid;
-            grid-template-columns: repeat(10, 60px);
-            grid-template-rows: repeat(10, 52px);
-            gap: 2px;
+            grid-template-columns: repeat({{ grid_width }}, 50px);
+            grid-template-rows: repeat({{ grid_height }}, 50px);
+            grid-gap: 2px;
+            margin-top: 20px;
         }
-        .hex {
-            width: 60px;
-            height: 52px;
-            background-color: lightgray;
-            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-            transition: background-color 0.2s;
+        .cell {
+            width: 50px;
+            height: 50px;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .player1 {
+            background-color: red;
+            border-radius: 50%;
+        }
+        .player2 {
+            background-color: blue;
+            border-radius: 50%;
+        }
+        .player3 {
+            background-color: green;
+            border-radius: 50%;
+        }
+        .player4 {
+            background-color: yellow;
+            border-radius: 50%;
+        }
+        .player5 {
+            background-color: purple;
+            border-radius: 50%;
+        }
+        .finish {
+            background-color: gold;
+            font-weight: bold;
+            color: black;
+            text-align: center;
+        }
+        .green {
+            background-color: lightgreen;
+        }
+        .red {
+            background-color: lightcoral;
+        }
+        .start-btn {
+            margin-top: 20px;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .game-status {
+            margin-top: 20px;
+            font-size: 20px;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
+    <h1>Race Game</h1>
+    <h2>Current Color: <span id="currentColor">{{ current_color }}</span></h2>
 
-<div id="board">
-    <!-- Hexagonal tiles will be added here on clicks -->
-</div>
+    <div class="grid" id="gameBoard">
+        {% for i in range(grid_size) %}
+        <div class="cell" id="cell{{ i }}">
+            {% for player, position in player_positions.items() %}
+                {% if position == i %}
+                    <div class="{{ player }}">{{ player[-1] }}</div>
+                {% endif %}
+            {% endfor %}
+            {% if i >= grid_size - grid_width %}
+                <div class="finish">Finish</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script>
-    $(document).ready(function() {
-        // Create an empty board of hex tiles
-        for (let i = 0; i < 100; i++) {
-            const hexTile = $('<div class="hex"></div>');
-            hexTile.data("clicked", false);  // Track if a tile has been clicked
-            $('#board').append(hexTile);
+    <button id="startBtn" class="start-btn" onclick="startGame()">Start Game</button>
+    <div id="gameStatus" class="game-status"></div>
+
+    <script>
+        const gridSize = {{ grid_width * grid_height }};
+        const gridWidth = {{ grid_width }};
+        const players = ['player1', 'player2', 'player3', 'player4', 'player5'];
+
+        // Function to fetch the current game state from the server
+        function fetchGameState() {
+            fetch('/get_game_state')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.game_over) {
+                        document.getElementById('gameStatus').textContent = data.winner + " wins!";
+                    } else {
+                        document.getElementById('gameStatus').textContent = '';
+                    }
+                    updateGameBoard(data.player_positions, data.current_color);
+                });
         }
 
-        // Add color to hex tiles on click
-        $('#board').on('click', '.hex', function() {
-            if (!$(this).data("clicked")) {  // Only allow one click per tile
-                $.getJSON('/add_tile', function(data) {
-                    $(this).css('background-color', data.color);
-                    $(this).data("clicked", true);  // Mark as clicked
-                }.bind(this));
+        // Function to update the game board based on the game state
+        function updateGameBoard(positions, color) {
+            document.getElementById('currentColor').textContent = color;
+            for (let i = 0; i < gridSize; i++) {
+                const cell = document.getElementById('cell' + i);
+                cell.className = 'cell'; // Reset to base class
+                if (i >= gridSize - gridWidth) {
+                    cell.classList.add('finish');
+                }
+                if (color === 'green') {
+                    cell.classList.add('green');
+                } else {
+                    cell.classList.add('red');
+                }
+                // Mark players' positions
+                players.forEach(player => {
+                    if (positions[player] === i) {
+                        cell.innerHTML = `<div class="${player}">${player.charAt(player.length - 1)}</div>`;
+                    }
+                });
+            }
+        }
+
+        // Handle player click to move forward or backward
+        document.getElementById('gameBoard').addEventListener('click', function(e) {
+            if (!e.target.classList.contains('cell')) return;
+
+            let clickedIndex = Array.from(e.target.parentElement.children).indexOf(e.target);
+            if (clickedIndex < gridSize) {
+                const player = players[clickedIndex % players.length]; // Alternate between players
+                fetch('/move_player', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ player: player })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    updateGameBoard(data.player_positions, data.current_color);
+                    if (data.game_over) {
+                        document.getElementById('gameStatus').textContent = data.winner + " wins!";
+                    }
+                });
             }
         });
-    });
-</script>
 
+        // Start the game by fetching the game state every second
+        function startGame() {
+            setInterval(fetchGameState, 1000);
+        }
+
+        // Initial fetch of the game state
+        fetchGameState();
+    </script>
 </body>
 </html>
